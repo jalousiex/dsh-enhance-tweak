@@ -1,0 +1,29 @@
+# dsh-tweaks — 增强补丁
+#
+# 把一个包插进 profile 的条目列表，让 cordis 加载 index.js（宿主半：读开关、
+# 应用补丁、提供 /dsh-tweaks/status），并把浏览器半 lib/client.js 交给 web
+# 模块加载器。
+#
+# 开关不在此文件里：每个 tweak 是 Config 的一个 .volatile() 布尔字段，
+# 由 DSH 设置窗口的「增强补丁」分区（settings.section 一级分区）编辑，
+# settings.update 写回 profile 的 config。这里只保留插件加载入口 + 少量
+# 非开关型可调参数。
+
+- insert:
+    # id 保持 dsh-tweaks：设置层、状态文件（~/.dsh/.cache/dsh-tweaks/state.json）
+    # 与路由前缀（/dsh-tweaks/*）都以它为准；npm 包名是 dsh-enhance-tweak，
+    # 只有 name（模块解析用）需要与包名一致。
+    - id: dsh-tweaks
+      name: 'dsh-enhance-tweak'
+      config:
+        # 只读状态路由，loopback 同源，默认开
+        statusRoute: true
+
+        # ── 可调参数（官方约定：凡是可能因部署而异的值都要进 Config）────────
+        # 对账型改动被反复弹回时的重试上限。
+        reassertLimit: 10
+        # 兜底对账间隔（毫秒）。0 = 纯事件驱动（默认，不轮询）；
+        # >0 才额外挂一个兜底定时器。
+        fallbackReconcileMs: 0
+        # 浏览器半的状态兜底刷新间隔（毫秒），由 /dsh-tweaks/status 下发。
+        statusRefreshMs: 600000

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Enhancement Tweaks",
+    "description": "Individually switchable tweaks for DSH: hide the built-in provider, fix the sidebar layout, one-click host restart, relaxed slow-link timeouts, plus cross-machine session discovery. Toggle them in the settings section; cross-machine locking is dsh-xlock's job."
+  }
+}
