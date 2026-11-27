@@ -1,6 +1,6 @@
 {
   "name": "dsh-enhance-tweak",
-  "version": "0.6.10",
+  "version": "0.6.11",
   "description": "Individually switchable enhancement tweaks for DeepSeek Harness (dsh): hide built-in provider, fix sidebar layout, one-click host restart, relaxed slow-link timeouts, cross-machine session discovery.",
   "type": "module",
   "main": "index.js",

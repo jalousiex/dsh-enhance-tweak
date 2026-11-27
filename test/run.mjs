@@ -114,6 +114,13 @@ ok(
   'ids are unique',
   new Set(TWEAKS.map((t) => t.id)).size === TWEAKS.length,
 )
+{
+  const slow = TWEAKS.find((t) => t.id === 'slowLinkTimeouts')
+  ok('slowLinkTimeouts remains default-on', slow?.default === true)
+  check('slowLinkTimeouts patches readiness only', slow?.configPatch, [
+    { target: 'connection', path: 'recovery.generationReadyTimeoutMs', tuning: 'slowReadyTimeoutMs' },
+  ])
+}
 ok('hideBuiltinDeepseek is registered', TWEAKS.some((t) => t.id === 'hideBuiltinDeepseek'))
 ok('hideUnroutableModels is gone', !TWEAKS.some((t) => t.id === 'hideUnroutableModels'))
 ok('fixTapWebPin is gone', !TWEAKS.some((t) => t.id === 'fixTapWebPin'))
@@ -201,19 +208,20 @@ ok('no positiveInt(config?.restart…) fallback survives', !/positiveInt\(config
 ok('restart entries are NOT Config fields', !Config.dict?.restartButton && !Config.dict?.restartFooter && !Config.dict?.restartHeader && !Config.dict?.restartTool)
 
 console.log('TUNING（状态文件里的可调参数）:')
-ok('TUNING is exported and frozen', Object.isFrozen(TUNING) && TUNING.length === 6)
-check('TUNING ids stay in order', TUNING.map((t) => t.id), ['allowRestart', 'restartDelayMs', 'restartTokenMs', 'restartToolCountdownMs', 'slowHeartbeatMs', 'slowReadyTimeoutMs'])
+ok('TUNING is exported and frozen', Object.isFrozen(TUNING) && TUNING.length === 5)
+check('TUNING ids stay in order', TUNING.map((t) => t.id), ['allowRestart', 'restartDelayMs', 'restartTokenMs', 'restartToolCountdownMs', 'slowReadyTimeoutMs'])
 ok('allowRestart is a boolean tuning defaulting off', TUNING[0].kind === 'boolean' && TUNING[0].default === false)
-ok('the three restart durations are numbers with floors', TUNING.slice(1).every((t) => t.kind === 'number' && typeof t.min === 'number'))
+ok('the three restart durations are numbers with floors', TUNING.slice(1, 4).every((t) => t.kind === 'number' && typeof t.min === 'number'))
+ok('the readiness duration is a number with a floor', TUNING[4].kind === 'number' && typeof TUNING[4].min === 'number')
 ok('every tuning carries a label and a note', TUNING.every((t) => typeof t.label === 'string' && t.label && typeof t.note === 'string' && t.note))
 check('tuningValue coerces booleans strictly', tuningValue({ allowRestart: 'yes' }, TUNING[0]), false)
 check('tuningValue falls back when absent', tuningValue({}, TUNING[1]), 1000)
 check('tuningValue clamps below the floor', tuningValue({ restartTokenMs: 1 }, TUNING[2]), 1000)
 check('tuningValue rejects junk numbers', tuningValue({ restartDelayMs: 'abc' }, TUNING[1]), 1000)
 const tuningShapes = describeTuning({ allowRestart: true, restartDelayMs: 0 })
-check('describeTuning exposes the live value', tuningShapes.map((t) => t.value), [true, 0, 30000, 10000, 30000, 120000])
+check('describeTuning exposes the live value', tuningShapes.map((t) => t.value), [true, 0, 30000, 10000, 120000])
 ok('describeTuning ships the control metadata', tuningShapes.every((t) => typeof t.id === 'string' && typeof t.kind === 'string' && 'min' in t))
-check('describeTuning tags slow-link params to slowLinkTimeouts', tuningShapes.filter((t) => t.tweakId === 'slowLinkTimeouts').map((t) => t.id), ['slowHeartbeatMs', 'slowReadyTimeoutMs'])
+check('describeTuning tags slow-link params to slowLinkTimeouts', tuningShapes.filter((t) => t.tweakId === 'slowLinkTimeouts').map((t) => t.id), ['slowReadyTimeoutMs'])
 check('describeTuning tags restart params to restartButton', tuningShapes.filter((t) => t.tweakId === 'restartButton').map((t) => t.id), ['allowRestart', 'restartDelayMs', 'restartTokenMs', 'restartToolCountdownMs'])
 
 console.log('配置值类纯 helper（getConfigPath / setConfigPath / applyConfigPatch / restoreConfigPatch）:')
@@ -579,7 +587,6 @@ console.log('readState / writeState（状态文件读写）:')
     restartDelayMs: 1000,
     restartTokenMs: 30000,
     restartToolCountdownMs: 10000,
-    slowHeartbeatMs: 30000,
     slowReadyTimeoutMs: 120000,
   })
   ok('state file is under .cache/dsh-tweaks', readFileSync(statePath(tmpHome), 'utf8').includes('hideBuiltinDeepseek'))
