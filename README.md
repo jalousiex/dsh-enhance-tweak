@@ -1,6 +1,6 @@
 # dsh-enhance-tweak — 增强补丁
 
-DeepSeek Harness 的可单独开关的增强补丁集合：隐藏内置供应商、修复侧边栏布局、一键重启宿主、放宽慢链路超时、跨机冷会话发现。开关在设置窗口「增强补丁」分区里改，切换即时生效、界面不跳转。
+DeepSeek Harness 的可单独开关的增强补丁集合：隐藏内置供应商、修复侧边栏布局、一键重启宿主、跨机冷会话发现。开关在设置窗口「增强补丁」分区里改，切换即时生效、界面不跳转。
 
 **与 dsh-xlock 的分工**：会话锁、创建归属、跨机归档等写入门禁归 dsh-xlock；本插件只管「补丁开关」和「同步来的新会话挂进列表」。
 
@@ -11,8 +11,6 @@ DeepSeek Harness 的可单独开关的增强补丁集合：隐藏内置供应商
 | `hideBuiltinDeepseek` | 关 | 隐藏内置供应商，模型列表只留「DeepSeek 账号」 |
 | `sidebarFooterLayout` | 关 | 修复侧边栏底部入口错位（上游插件 CSS 冲突） |
 | `restartButton` | 关 | 重启宿主：侧栏底部 / 右上角标签栏 / 智能体工具三个入口可选 |
-| `slowLinkTimeouts` | 开 | 仅放宽连接就绪超时：`slowReadyTimeoutMs` 默认 120000ms（出厂 15000ms）；效果尚未证实 |
-
 另有 `sessionDiscoveryMs`（默认 15s）：扫描同步盘上对端新建的会话并挂进列表，对端删掉的撤行；只发现、不恢复、不绕过 xlock 门禁。
 
 ## 设计思路
@@ -47,14 +45,22 @@ dsh-enhance-tweak: "file:../path/to/dsh-plugins/dsh-enhance-tweak"
 
 ```bash
 node test/run.mjs
-node test/slow-link-test.mjs
 ```
 
-`test/run.mjs` 会创建并递归删除固定的 `test/tmp-state-home`；运行前须检查该路径及本机删除规则。`slow-link-test.mjs` 使用内存假 Loader，不操作真实配置或重启服务。
+`test/run.mjs` 会创建并递归删除固定的 `test/tmp-state-home`；运行前须检查该路径及本机删除规则。源码修改须安装并重启宿主后才可能在运行版可用。
 
-慢链路单项测试控制器目前仅供隔离模拟，默认拒绝启动，未连接生产写入路由；它不能用于实机验证。总开关现在只调整连接就绪超时，不再调整网关心跳；旧状态中的 `slowHeartbeatMs` 会被忽略。其状态不能证明手机端实际使用的值或连接改善，关闭时会尝试恢复原值，但不能保证并发修改时完全恢复。
+## 发布（GitHub Actions + npm OIDC）
 
-启用 `statusRoute` 时，`GET /dsh-tweaks/slow-link-observe` 使用 Connection 的现有认证与信任检查，只读报告两个目标 fiber 的已解析配置及生命周期；目标条目不唯一或配置中的模块名无法确认时不报告数值。配置值不等于网关 mux 定时器或手机连接控制器的实际运行值。源码修改须安装并重启宿主后才可能在运行版可用。
+发布只走 GitHub Actions，不在本机直接 `pnpm publish`。先 bump `package.json.version`，确认测试通过、工作区只含本次改动，再提交并推送 `v<version>` tag；workflow 会先验证 tag 与版本一致、跑测试和 `npm pack --dry-run`，然后以 npm Trusted Publishing 发布。
+
+首次启用须由包维护者在 npm 包的 Trusted Publisher 设置中登记一次：
+
+- Organization / user：`jalousiex`
+- Repository：`dsh-enhance-tweak`
+- Workflow filename：`publish.yml`
+- Environment name：`npm-publish`
+
+仓库内不配置 `NPM_TOKEN`。日常发布使用临时 OIDC 身份，不需要重复网页登录或长期发布 token；若 npm 未登记上述 Trusted Publisher，workflow 会拒绝发布。
 
 ## License
 

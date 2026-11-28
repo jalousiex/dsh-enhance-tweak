@@ -114,13 +114,7 @@ ok(
   'ids are unique',
   new Set(TWEAKS.map((t) => t.id)).size === TWEAKS.length,
 )
-{
-  const slow = TWEAKS.find((t) => t.id === 'slowLinkTimeouts')
-  ok('slowLinkTimeouts remains default-on', slow?.default === true)
-  check('slowLinkTimeouts patches readiness only', slow?.configPatch, [
-    { target: 'connection', path: 'recovery.generationReadyTimeoutMs', tuning: 'slowReadyTimeoutMs' },
-  ])
-}
+ok('slowLinkTimeouts is removed', !TWEAKS.some((t) => t.id === 'slowLinkTimeouts'))
 ok('hideBuiltinDeepseek is registered', TWEAKS.some((t) => t.id === 'hideBuiltinDeepseek'))
 ok('hideUnroutableModels is gone', !TWEAKS.some((t) => t.id === 'hideUnroutableModels'))
 ok('fixTapWebPin is gone', !TWEAKS.some((t) => t.id === 'fixTapWebPin'))
@@ -208,20 +202,19 @@ ok('no positiveInt(config?.restart…) fallback survives', !/positiveInt\(config
 ok('restart entries are NOT Config fields', !Config.dict?.restartButton && !Config.dict?.restartFooter && !Config.dict?.restartHeader && !Config.dict?.restartTool)
 
 console.log('TUNING（状态文件里的可调参数）:')
-ok('TUNING is exported and frozen', Object.isFrozen(TUNING) && TUNING.length === 5)
-check('TUNING ids stay in order', TUNING.map((t) => t.id), ['allowRestart', 'restartDelayMs', 'restartTokenMs', 'restartToolCountdownMs', 'slowReadyTimeoutMs'])
+ok('TUNING is exported and frozen', Object.isFrozen(TUNING) && TUNING.length === 4)
+check('TUNING ids stay in order', TUNING.map((t) => t.id), ['allowRestart', 'restartDelayMs', 'restartTokenMs', 'restartToolCountdownMs'])
 ok('allowRestart is a boolean tuning defaulting off', TUNING[0].kind === 'boolean' && TUNING[0].default === false)
 ok('the three restart durations are numbers with floors', TUNING.slice(1, 4).every((t) => t.kind === 'number' && typeof t.min === 'number'))
-ok('the readiness duration is a number with a floor', TUNING[4].kind === 'number' && typeof TUNING[4].min === 'number')
 ok('every tuning carries a label and a note', TUNING.every((t) => typeof t.label === 'string' && t.label && typeof t.note === 'string' && t.note))
 check('tuningValue coerces booleans strictly', tuningValue({ allowRestart: 'yes' }, TUNING[0]), false)
 check('tuningValue falls back when absent', tuningValue({}, TUNING[1]), 1000)
 check('tuningValue clamps below the floor', tuningValue({ restartTokenMs: 1 }, TUNING[2]), 1000)
 check('tuningValue rejects junk numbers', tuningValue({ restartDelayMs: 'abc' }, TUNING[1]), 1000)
 const tuningShapes = describeTuning({ allowRestart: true, restartDelayMs: 0 })
-check('describeTuning exposes the live value', tuningShapes.map((t) => t.value), [true, 0, 30000, 10000, 120000])
+check('describeTuning exposes the live value', tuningShapes.map((t) => t.value), [true, 0, 30000, 10000])
 ok('describeTuning ships the control metadata', tuningShapes.every((t) => typeof t.id === 'string' && typeof t.kind === 'string' && 'min' in t))
-check('describeTuning tags slow-link params to slowLinkTimeouts', tuningShapes.filter((t) => t.tweakId === 'slowLinkTimeouts').map((t) => t.id), ['slowReadyTimeoutMs'])
+ok('slow-link tuning is removed', !tuningShapes.some((t) => t.id === 'slowReadyTimeoutMs'))
 check('describeTuning tags restart params to restartButton', tuningShapes.filter((t) => t.tweakId === 'restartButton').map((t) => t.id), ['allowRestart', 'restartDelayMs', 'restartTokenMs', 'restartToolCountdownMs'])
 
 console.log('配置值类纯 helper（getConfigPath / setConfigPath / applyConfigPatch / restoreConfigPatch）:')
@@ -243,29 +236,29 @@ check('getConfigPath tolerates junk input', getConfigPath(null, 'a'), undefined)
 check('setConfigPath creates missing intermediate objects', getConfigPath(setConfigPath({}, 'a.b.c', 5), 'a.b.c'), 5)
 {
   const mk = (id, config) => ({ options: { id, config }, update(next) { this.options = next; return Promise.resolve() } })
-  const gateway = mk('typert-gateway', { websocketHeartbeatIntervalMs: 2000 })
-  const conn = mk('connection', { trustedHosts: ['x'], recovery: { generationReadyTimeoutMs: 15000 } })
+  const gateway = mk('typert-gateway', { mode: 'old' })
+  const conn = mk('connection', { trustedHosts: ['x'], recovery: { generationReadyWarnMs: 3000 } })
   const loader = { store: { 'typert-gateway': gateway, connection: conn }, entries: () => [gateway, conn] }
   const r = applyConfigPatch(loader, [
-    { target: 'typert-gateway', path: 'websocketHeartbeatIntervalMs', value: 30000 },
-    { target: 'connection', path: 'recovery.generationReadyTimeoutMs', value: 120000 },
+    { target: 'typert-gateway', path: 'mode', value: 'new' },
+    { target: 'connection', path: 'recovery.generationReadyWarnMs', value: 5000 },
     { target: 'ghost', path: 'x', value: 1 },
   ])
-  check('applyConfigPatch writes values into entry config', [getConfigPath(gateway.options.config, 'websocketHeartbeatIntervalMs'), getConfigPath(conn.options.config, 'recovery.generationReadyTimeoutMs')], [30000, 120000])
-  check('applyConfigPatch records before values', r.before.map((b) => b.value), [2000, 15000])
+  check('applyConfigPatch writes values into entry config', [getConfigPath(gateway.options.config, 'mode'), getConfigPath(conn.options.config, 'recovery.generationReadyWarnMs')], ['new', 5000])
+  check('applyConfigPatch records before values', r.before.map((b) => b.value), ['old', 3000])
   check('applyConfigPatch reports changed', r.changed, true)
   check('applyConfigPatch reports a missing target', r.errors, ['target ghost is not in the loader tree'])
-  const r2 = applyConfigPatch(loader, [{ target: 'typert-gateway', path: 'websocketHeartbeatIntervalMs', value: 30000 }])
+  const r2 = applyConfigPatch(loader, [{ target: 'typert-gateway', path: 'mode', value: 'new' }])
   check('applyConfigPatch skips when already at target', { before: r2.before.length, changed: r2.changed }, { before: 0, changed: false })
 }
 {
   const mk = (id, config) => ({ options: { id, config }, update(next) { this.options = next; return Promise.resolve() } })
   const conn = mk('connection', { recovery: {} })
   const loader = { store: { connection: conn }, entries: () => [conn] }
-  const applied = applyConfigPatch(loader, [{ target: 'connection', path: 'recovery.generationReadyTimeoutMs', value: 120000 }])
-  check('applyConfigPatch sets a previously-absent key', getConfigPath(conn.options.config, 'recovery.generationReadyTimeoutMs'), 120000)
+  const applied = applyConfigPatch(loader, [{ target: 'connection', path: 'recovery.generationReadyWarnMs', value: 5000 }])
+  check('applyConfigPatch sets a previously-absent key', getConfigPath(conn.options.config, 'recovery.generationReadyWarnMs'), 5000)
   restoreConfigPatch(loader, applied.before)
-  ok('restoreConfigPatch deletes the leaf when it was previously absent', !('generationReadyTimeoutMs' in (conn.options.config.recovery || {})))
+  ok('restoreConfigPatch deletes the leaf when it was previously absent', !('generationReadyWarnMs' in (conn.options.config.recovery || {})))
 }
 
 console.log('开关状态文件（切换不碰 Config/patch）:')
@@ -576,7 +569,6 @@ console.log('readState / writeState（状态文件读写）:')
   ok('writeState succeeds', writeState(tmpHome, next) === true)
   // 键序跟着 readState 的产出走：补丁 → 位置选项 → 可调参数。
   check('readState round-trips', readState(tmpHome), {
-    slowLinkTimeouts: false,
     hideBuiltinDeepseek: true,
     sidebarFooterLayout: false,
     restartButton: false,
@@ -587,7 +579,6 @@ console.log('readState / writeState（状态文件读写）:')
     restartDelayMs: 1000,
     restartTokenMs: 30000,
     restartToolCountdownMs: 10000,
-    slowReadyTimeoutMs: 120000,
   })
   ok('state file is under .cache/dsh-tweaks', readFileSync(statePath(tmpHome), 'utf8').includes('hideBuiltinDeepseek'))
   // 旧版单开关迁移：位置键缺省时跟随主开关（显式值优先）。

@@ -58,32 +58,6 @@ export const ROUTE_PREFIX = '/dsh-tweaks'
  */
 export const TWEAKS = Object.freeze([
   {
-    id: 'slowLinkTimeouts',
-    title: '慢链路连接就绪超时',
-    default: true,
-    what: '放宽实时连接的初始化就绪超时，实际效果尚未证实，不保证改善连接。',
-    why:
-      '连接就绪超时由每机 state.json 决定，默认 120000ms，出厂默认 15000ms；' +
-      '关闭时尝试恢复改写前的基线值（可能由配置覆盖），并发修改时不能保证完全恢复。',
-    subject: {
-      kind: 'entry',
-      name: 'connection',
-      label: '连接就绪超时',
-    },
-    owner: { name: 'dsh', label: 'DeepSeek Harness', kind: 'host' },
-    effect:
-      '改写 connection 条目的 recovery.generationReadyTimeoutMs；关闭时尝试恢复改写前的值。',
-    appliesWhen:
-      '该 profile 里存在 connection（@deepseek-ai/dsh-client-connection）条目；' +
-      '就绪超时可在下方可调参数里按机调整。',
-    menu: true,
-    // 「配置值类」改动：不是禁用条目，而是往目标条目的 config 写值。
-    // 每项的 `tuning` 指向一个 TUNING 参数，取它的当前值作为要写入的值。
-    configPatch: [
-      { target: 'connection', path: 'recovery.generationReadyTimeoutMs', tuning: 'slowReadyTimeoutMs' },
-    ],
-  },
-  {
     id: 'hideBuiltinDeepseek',
     title: '隐藏内置供应商',
     what: '模型列表里只留「DeepSeek 账号」，去掉重复的内置 API key 那一组。',
@@ -279,17 +253,6 @@ export const TUNING = Object.freeze([
     min: 0,
     label: '智能体工具倒计时（毫秒）',
     note: 'restart_dsh 被调用后先在界面上弹倒计时，留出取消时间；0 表示不等待。',
-  },
-  {
-    id: 'slowReadyTimeoutMs',
-    tweakId: 'slowLinkTimeouts',
-    kind: 'number',
-    default: 120000,
-    min: 15000,
-    label: '连接就绪超时（毫秒）',
-    note:
-      'connection 的 recovery.generationReadyTimeoutMs：实时连接初始化期限。' +
-      '默认 120000（出厂 15000）。放宽后实际效果尚未证实，不保证改善连接。',
   },
 ])
 
@@ -829,67 +792,6 @@ export function findEntry(loader, id) {
     }
   }
   return undefined
-}
-
-/**
- * 仅读取两个宿主 fiber 已解析的配置值，绝不返回其它配置字段。
- * ACTIVE=2 是当前 Cordis FiberState 的值；effectiveConfig 在卸载后仍可读，
- * 因此必须同时检查 state 和 inertia。这里不证明 mux timer 或手机 Controller。
- */
-export function observeSlowLinkValues(loader) {
-  const limitation = '仅为宿主 fiber 已解析配置，不代表实际网关 mux 定时器或 Android Controller 的运行值，也不能作为连接状态判据。'
-  const unavailable = (status) => ({ status, fiberState: null, pending: false, value: null })
-  // local id 可能在不同 subtree 内重复；不可枚举时不能仅凭 store 的首项猜唯一。
-  function select(target, expectedName) {
-    if (!loader || typeof loader.entries !== 'function') return { status: 'unverifiable' }
-    let matches
-    try {
-      matches = new Set()
-      for (const entry of loader.entries()) {
-        if (entry?.options?.id === target) matches.add(entry)
-      }
-    } catch {
-      return { status: 'unverifiable' }
-    }
-    if (matches.size === 0) return { status: 'entry_missing' }
-    if (matches.size !== 1) return { status: 'ambiguous' }
-    const entry = matches.values().next().value
-    if (entry.options?.name !== expectedName) return { status: 'identity_unverified' }
-    return { entry }
-  }
-  function observe(target, path, expectedName) {
-    try {
-      const first = select(target, expectedName)
-      if (first.status) return unavailable(first.status)
-      const entry = first.entry
-      const fiber = entry.fiber
-      if (!fiber) return unavailable('fiber_missing')
-      const state = fiber.state
-      const fiberState = Number.isInteger(state) && state >= 0 && state <= 5 ? state : null
-      const pending = fiber.inertia != null
-      if (pending) return { status: 'transitioning', fiberState, pending: true, value: null }
-      if (state !== 2) return { status: 'inactive', fiberState, pending: false, value: null }
-      const value = getConfigPath(fiber.effectiveConfig, path)
-      // 取值后重新枚举并确认唯一身份，以及同一 fiber 的生命周期。
-      const last = select(target, expectedName)
-      if (last.status) return unavailable(last.status)
-      if (last.entry !== entry || entry.fiber !== fiber) return unavailable('fiber_changed')
-      const finalState = fiber.state
-      const finalStateValue = Number.isInteger(finalState) && finalState >= 0 && finalState <= 5 ? finalState : null
-      if (fiber.inertia != null) return { status: 'transitioning', fiberState: finalStateValue, pending: true, value: null }
-      if (finalState !== 2) return { status: 'inactive', fiberState: finalStateValue, pending: false, value: null }
-      if (value === undefined || value === null) return { status: 'value_missing', fiberState, pending: false, value: null }
-      if (typeof value !== 'number' || !Number.isFinite(value)) return { status: 'value_invalid', fiberState, pending: false, value: null }
-      return { status: 'observed', fiberState, pending: false, value }
-    } catch {
-      return { status: 'error', fiberState: null, pending: false, value: null, error: '读取宿主配置失败。' }
-    }
-  }
-  return {
-    heartbeat: observe('typert-gateway', 'websocketHeartbeatIntervalMs', '@deepseek-ai/dsh-api-gateway'),
-    ready: observe('connection', 'recovery.generationReadyTimeoutMs', '@deepseek-ai/dsh-client-connection'),
-    limitation,
-  }
 }
 
 /**
@@ -1765,56 +1667,6 @@ export function apply(ctx, config = {}) {
           response.end(JSON.stringify(status()))
         },
       }), 'dsh-tweaks:status-route')
-      // 只读诊断：只返回两个目标数值和 fiber 生命周期，不接入实验控制器。
-      wsctx.effect(() => wsctx.webServer.register({
-        kind: 'exact',
-        path: `${ROUTE_PREFIX}/slow-link-observe`,
-        handler: async (request, response) => {
-          if (request.method !== 'GET') {
-            response.writeHead(405, { allow: 'GET', 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-            response.end(JSON.stringify({ error: '只允许 GET。' }))
-            return
-          }
-          // exact route 不自动继承 Connection 认证；先执行其 Host/Origin 与会话门禁。
-          const reject = (code, message) => {
-            response.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-            response.end(JSON.stringify({ error: message }))
-          }
-          try {
-            const connection = wsctx.get('connection')
-            if (!connection || typeof connection.admit !== 'function') {
-              reject(503, '认证服务不可用。')
-              return
-            }
-            const admission = await connection.admit(request)
-            if (!admission || typeof admission !== 'object') {
-              reject(503, '认证服务不可用。')
-              return
-            }
-            if ('rejection' in admission) {
-              if (admission.rejection === 401) reject(401, '认证失败。')
-              else if (admission.rejection === 403) reject(403, '访问被拒绝。')
-              else reject(503, '认证服务不可用。')
-              return
-            }
-            if (!admission.peer) {
-              reject(503, '认证服务不可用。')
-              return
-            }
-          } catch {
-            reject(503, '认证服务不可用。')
-            return
-          }
-          try {
-            const observation = observeSlowLinkValues(loaderOf(ctx))
-            response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-            response.end(JSON.stringify(observation))
-          } catch {
-            response.writeHead(500, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-            response.end(JSON.stringify({ error: '读取宿主配置失败。' }))
-          }
-        },
-      }), 'dsh-tweaks:slow-link-observe-route')
       /**
        * 客户端自报健康：浏览器半把自己看到的事实 POST 上来。
        *
