@@ -686,6 +686,7 @@ export async function restartHost({
   exit = process.exit,
   desktop = isDesktopShell(),
   parentPid = process.ppid,
+  platform = process.platform,
   /**
    * 桌面版：让**本进程**（宿主）优雅退出的动作。
    *
@@ -710,7 +711,7 @@ export async function restartHost({
   return new Promise((resolve) => {
     setTimeout(() => {
       try {
-        if (handoffToDesktop && process.platform === 'win32') {
+        if (handoffToDesktop && platform === 'win32') {
           // 桌面版：先把交接脚本落成临时 .ps1，再由 WMI 以独立进程拉起它
           // （父进程 WmiPrvSE，脱离 DSH 进程树，主进程退出不会带走 helper）。
           const scriptPath = join(tmpdir(), `dsh-tweaks-handoff-${pid}-${Date.now()}.ps1`)
@@ -734,7 +735,7 @@ export async function restartHost({
           return
         }
         let child
-        if (process.platform === 'win32') {
+        if (platform === 'win32') {
           const script = handoffToDesktop
             ? windowsDesktopHandoffScript(pid, parentPid, executable, delayMs)
             : windowsHandoffScript(pid, executable, argv)

@@ -23,6 +23,7 @@ const root = join(here, '..')
 
 const require_ = createRequire(import.meta.url)
 function loadSchemastery() {
+  if (process.env.DSH_TWEAKS_TEST_NO_DEPS === '1') return null
   const candidates = [
     join(root, 'node_modules', '@deepseek-ai', 'schemastery'),
     join(homedir(), '.dsh', 'profiles', 'desktop', 'node_modules', '@deepseek-ai', 'schemastery'),
@@ -54,10 +55,25 @@ function ok(name, cond) {
 }
 
 // ── host half ────────────────────────────────────────────────────────────
+const fallbackSchema = (() => {
+  const field = {
+    meta: {},
+    default(value) { this.defaultValue = value; return this },
+    description() { return this },
+    volatile() { this.meta.volatile = true; return this },
+  }
+  const z = {
+    object(dict) { return { ...field, dict } },
+    boolean() { return { ...field } },
+    number() { return { ...field } },
+    string() { return { ...field } },
+  }
+  return z
+})()
 const hostSource = readFileSync(join(root, 'index.js'), 'utf8')
   .replace(
     /^import z from '@deepseek-ai\/schemastery'$/m,
-    Schemastery ? 'const z = hostZ;' : 'const z = new Proxy(function () {}, { get: () => z, apply: () => z })',
+    'const z = hostZ;',
   )
   .replace(/^import .*$/gm, '')
   .replace(/^export /gm, '')
@@ -98,7 +114,7 @@ const hostCtx = {
   spawnSync,
   tmpdir,
   zstdDecompressSync,
-  hostZ: Schemastery ? Schemastery.default || Schemastery : undefined,
+  hostZ: Schemastery ? Schemastery.default || Schemastery : fallbackSchema,
   Promise,
   Symbol,
   Intl,
@@ -393,6 +409,7 @@ ok('reconcileAll re-reads the tunables before re-applying', /function reconcileA
     desktop: true,
     parentPid: 4321,
     pid: 1234,
+    platform: 'win32',
     spawnSyncHost: (cmd, args, opts) => {
       launches.push({ cmd, args, opts })
       return { status: 0 }
